@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>iojo 창작 글 웹페이지</title>
+  <style>
+    body { font-family: sans-serif; background: #fff; color: #000; margin: 0; padding: 1rem; }
+    header { text-align: center; margin-bottom: 1.5rem; position: relative; }
+    .status-box { position: absolute; top: 0; right: 1rem; font-size: 0.9rem; color: #666; }
+    .guide, .login, .post-form, .post-list, .search-sort, .detail-view { max-width: 700px; margin: 0 auto 1.5rem; }
+    .post, .comment { border: 1px solid #ccc; padding: 1rem; margin-bottom: 1rem; }
+    .small { font-size: 0.9rem; color: #666; }
+    .button { background-color: #364d2b; color: white; padding: 0.5rem 1rem; border: none; cursor: pointer; }
+    input, textarea, select { width: 100%; padding: 0.5rem; margin-bottom: 0.5rem; }
+    .like-button { margin-top: 0.5rem; padding: 0.3rem 0.8rem; background-color: #eee; border: 1px solid #ccc; cursor: pointer; }
+    .like-button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>창작 글 웹페이지 iojo 입니다.</h1>
+    <p class="small">자유롭게 글을 올려주세요.</p>
+    <div class="status-box" id="status">🔒 비로그인 상태</div>
+  </header>
+
+  <div class="login">
+    <div class="small">로그아웃 상태에서는 글 열람만 가능합니다.</div>
+    <input type="email" id="email" placeholder="이메일">
+    <input type="text" id="nickname" placeholder="닉네임">
+    <input type="password" id="adminPw" placeholder="관리자 비밀번호">
+    <button class="button" onclick="login()">로그인</button>
+    <button class="button" onclick="toggleGuide()">회원제</button>
+  </div>
+
+  <div id="guide" class="guide hidden">
+    <h3>📛 회원제 안내</h3>
+    <ul>
+      <li>📝 글을 10개 작성: 다작회원</li>
+      <li>🏅 글을 100개 작성: 우수회원</li>
+      <li>🤝 좋아요를 100회 누름: 친밀회원</li>
+      <li>🌟 받은 좋아요가 30개 이상: 인싸회원</li>
+      <li>💬 댓글을 10개 작성: 소통회원</li>
+      <li>👑 관리자 로그인 시: 관리자</li>
+    </ul>
+  </div>
+
+  <div id="postForm" class="post-form hidden">
+    <h3>✍️ 글 작성</h3>
+    <input type="text" id="postTitle" placeholder="제목 (필수)">
+    <input type="text" id="postSubtitle" placeholder="부제목 (선택)">
+    <textarea id="postContent" placeholder="내용 (필수)"></textarea>
+    <input type="text" id="postTags" placeholder="태그 (선택)">
+    <button class="button" onclick="createPost()">작성</button>
+  </div>
+
+  <div class="search-sort">
+    <input type="text" id="searchInput" placeholder="검색어를 입력하세요" oninput="renderPosts()">
+    <select id="sortSelect" onchange="renderPosts()">
+      <option value="latest">최신순</option>
+      <option value="popular">인기순</option>
+    </select>
+  </div>
+
+  <div id="postList" class="post-list"></div>
+  <div id="detailView" class="detail-view hidden"></div>
+
+  <script>
+    let loggedIn = false, isAdmin = false, userName = '';
+    let postCount = 0, likeGiven = 0, totalLikesReceived = 0, commentCount = 0;
+    let posts = JSON.parse(localStorage.getItem('iojo_posts') || '[]');
+
+    function toggleGuide() {
+      document.getElementById('guide').classList.toggle('hidden');
+    }
+
+    function login() {
+      const email = document.getElementById('email').value;
+      const nick = document.getElementById('nickname').value;
+      const pw = document.getElementById('adminPw').value;
+      if ((email.includes('@') && email.includes('.') && nick) || pw === 'ilhyun11') {
+        userName = nick || '관리자';
+        loggedIn = true; isAdmin = pw === 'ilhyun11';
+        document.getElementById('postForm').classList.remove('hidden');
+        document.getElementById('status').textContent = '✅ 로그인 중: ' + userName;
+        renderPosts();
+      } else alert('올바른 이메일 형식 또는 관리자 비밀번호를 입력해주세요.');
+    }
+
+    function getBadges() {
+      const b = [];
+      if (isAdmin) b.push('👑');
+      if (postCount >= 100) b.push('🏅');
+      if (postCount >= 10) b.push('📝');
+      if (likeGiven >= 100) b.push('🤝');
+      if (totalLikesReceived >= 30) b.push('🌟');
+      if (commentCount >= 10) b.push('💬');
+      return b.join(' ');
+    }
+
+    function createPost() {
+      const t = document.getElementById('postTitle').value;
+      const s = document.getElementById('postSubtitle').value;
+      const c = document.getElementById('postContent').value;
+      if (!t || !c) return alert('제목/내용 필수');
+      const post = {
+        id: Date.now(), title: t, subtitle: s, content: c, writer: userName,
+        badges: getBadges(), views: 0, likes: 0, comments: [], createdAt: Date.now()
+      };
+      posts.unshift(post);
+      postCount++;
+      localStorage.setItem('iojo_posts', JSON.stringify(posts));
+      renderPosts();
+    }
+
+    function renderPosts() {
+      const list = document.getElementById('postList');
+      const keyword = document.getElementById('searchInput').value.toLowerCase();
+      const sort = document.getElementById('sortSelect').value;
+
+      let filtered = posts.filter(p =>
+        p.title.toLowerCase().includes(keyword) ||
+        (p.subtitle && p.subtitle.toLowerCase().includes(keyword))
+      );
+
+      if (sort === 'popular') {
+        filtered.sort((a, b) => (b.likes + b.views + b.comments.length) - (a.likes + a.views + a.comments.length));
+      } else {
+        filtered.sort((a, b) => b.createdAt - a.createdAt);
+      }
+
+      list.innerHTML = '';
+      filtered.forEach(p => {
+        const div = document.createElement('div');
+        div.className = 'post';
+        div.innerHTML = `
+          <div class="small">${p.badges}${p.writer}</div>
+          <h4 style="cursor:pointer;" onclick="viewPost(${p.id})">${p.title}</h4>
+          <p class="small">${p.subtitle}</p>
+          <div class="small">조회수: ${p.views} · 좋아요: ${p.likes} · 댓글: ${p.comments.length}</div>
+        `;
+        list.appendChild(div);
+      });
+    }
+
+    function viewPost(id) {
+      const post = posts.find(p => p.id === id);
+      post.views++;
+      localStorage.setItem('iojo_posts', JSON.stringify(posts));
+      const view = document.getElementById('detailView');
+      view.classList.remove('hidden');
+      view.innerHTML = `
+        <div class="post">
+          <div class="small">${post.badges}${post.writer}</div>
+          <h2>${post.title}</h2>
+          <h4>${post.subtitle}</h4>
+          <p>${post.content}</p>
+          <div class="small">조회수: ${post.views} · 좋아요: <span id="likeCount">${post.likes}</span> · 댓글: ${post.comments.length}</div>
+          <button class="like-button" onclick="likePost(${id})" ${!loggedIn ? 'disabled' : ''}>❤️ 좋아요</button>
+          ${isAdmin ? `<button class="like-button" onclick="deletePost(${id})">🗑 삭제</button>` : ''}
+          <div id="commentList"></div>
+          ${loggedIn ? `
+            <textarea id="commentInput" placeholder="댓글 작성"></textarea>
+            <button class="button" onclick="addComment(${id})">댓글 달기</button>` : ''}
+        </div>
+      `;
+      renderComments(id);
+      renderPosts();
+    }
+
+    function likePost(id) {
+      const post = posts.find(p => p.id === id);
+      post.likes++;
+      likeGiven++;
+      totalLikesReceived++;
+      document.getElementById('likeCount').textContent = post.likes;
+      localStorage.setItem('iojo_posts', JSON.stringify(posts));
+      renderPosts();
+    }
+
+    function addComment(id) {
+      const input = document.getElementById('commentInput');
+      if (!input.value) return;
+      const post = posts.find(p => p.id === id);
+      post.comments.push({ user: userName, text: input.value });
+      commentCount++;
+      input.value = '';
+      localStorage.setItem('iojo_posts', JSON.stringify(posts));
+      renderComments(id);
+      renderPosts();
+    }
+
+    function renderComments(id) {
+      const post = posts.find(p => p.id === id);
+      const list = document.getElementById('commentList');
+      list.innerHTML = '<h4>💬 댓글</h4>';
+      post.comments.forEach(c => {
+        const div = document.createElement('div');
+        div.className = 'comment';
+        div.innerHTML = `<div class="small">${c.user}</div><p>${c.text}</p>`;
+        list.appendChild(div);
+      });
+    }
+
+    function deletePost(id) {
+      if (!isAdmin) return;
+      posts = posts.filter(p => p.id !== id);
+      localStorage.setItem('iojo_posts', JSON.stringify(posts));
+      document.getElementById('detailView').classList.add('hidden');
+      renderPosts();
+    }
+
+    window.onload = () => renderPosts();
+  </script>
+</body>
+</html>
